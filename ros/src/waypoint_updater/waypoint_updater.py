@@ -3,6 +3,7 @@
 import rospy
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
+from std_msgs.msg import Int32
 
 import math
 
@@ -23,15 +24,21 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 
+def dist(pt1, pt2):
+    dist_x = pt1.x-pt2.x
+    dist_y = pt1.y-pt2.y
+    return dist_x*dist_x+dist_y*dist_y
 
 class WaypointUpdater(object):
     def __init__(self):
         rospy.init_node('waypoint_updater')
 
+        self.waypoints = None
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
+        # rospy.Subscriber('/traffic_waypoint', Int32, self.)
 
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
@@ -42,11 +49,30 @@ class WaypointUpdater(object):
 
     def pose_cb(self, msg):
         # TODO: Implement
-        pass
+        if self.waypoints is not None:
+            min_dist = 1e6
+            min_idx = -1
+            for idx, wp in enumerate(self.waypoints.waypoints):
+                if dist(msg.pose.position, wp.pose.pose.position) < min_dist:
+                    min_dist = dist(msg.pose.position, wp.pose.pose.position)
+                    min_idx = idx
+            # print(type(self.waypoints), min_idx)
+            min_idx += 1
+            len_wp = len(self.waypoints.waypoints)
+            end_wp = max(0, min_idx + LOOKAHEAD_WPS - len_wp)
+            final_waypoints = Lane()
+            final_waypoints.header = self.waypoints.header
+            final_waypoints.waypoints = \
+                    self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS] \
+                    + self.waypoints.waypoints[:end_wp]
+            self.final_waypoints_pub.publish(final_waypoints)
 
     def waypoints_cb(self, waypoints):
         # TODO: Implement
-        pass
+        # print(waypoints.waypoints[0].pose.pose)
+        # print(waypoints.header)
+        # print(waypoints.waypoints[0])
+        self.waypoints = waypoints
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement

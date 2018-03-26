@@ -55,8 +55,24 @@ class DBWNode(object):
 
         # TODO: Create `Controller` object
         # self.controller = Controller(<Arguments you wish to provide>)
+        yaw_control_params = {'wheel_base' : wheel_base,
+                              'steer_ratio' : steer_ratio,
+                              'min_speed' : 0,
+                              'max_lat_accel' : max_lat_accel,
+                              'max_steer_angle' : max_steer_angle}
+        self.controller = Controller(yaw_control_params=yaw_control_params)
 
         # TODO: Subscribe to all the topics you need to
+        self.twist_cmd = None
+        self.current_velocity = 0
+        self.dbw_enabled = False
+        self.twist_sub = rospy.Subscriber('/twist_cmd', TwistStamped,
+                                         self.twist_callback)
+        self.dbw_sub = rospy.Subscriber('/dbw_enabled', Bool,
+                                         self.dbw_callback)
+        self.velocity_sub = rospy.Subscriber('/current_velocity', TwistStamped,
+                                             lambda vel: self.current_velocity =
+                                             vel.twist.linear.x)
 
         self.loop()
 
@@ -72,6 +88,14 @@ class DBWNode(object):
             #                                                     <any other argument you need>)
             # if <dbw is enabled>:
             #   self.publish(throttle, brake, steer)
+            throttle, brake, steer = 0, 0, 0
+            if self.twist_cmd is not None:
+                time = self.twist_cmd.header.stamp.secs
+                time += self.twist_cmd.header.stamp.nsecs*1e-9
+                throttle, brake, steer = self.controller.control(twist_cmd=self.twist_cmd,
+                                                                 dbw_enabled=self.dbw_enabled)
+            if self.dbw_enabled is True:
+                self.publish(throttle, brake, steer)
             rate.sleep()
 
     def publish(self, throttle, brake, steer):
@@ -92,6 +116,11 @@ class DBWNode(object):
         bcmd.pedal_cmd = brake
         self.brake_pub.publish(bcmd)
 
+    def twist_callback(self, twist_cmd):
+        self.twist_cmd = twist_cmd
+
+    def dbw_callback(self, dbw_status):
+        self.dbw_enabled = dbw_status
 
 if __name__ == '__main__':
     DBWNode()
