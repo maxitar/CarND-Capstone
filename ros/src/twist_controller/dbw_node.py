@@ -60,7 +60,9 @@ class DBWNode(object):
                               'min_speed' : 0,
                               'max_lat_accel' : max_lat_accel,
                               'max_steer_angle' : max_steer_angle}
-        self.controller = Controller(yaw_control_params=yaw_control_params)
+        self.controller = Controller(vehicle_mass=vehicle_mass,
+                                     wheel_radius=wheel_radius,
+                                     yaw_control_params=yaw_control_params)
 
         # TODO: Subscribe to all the topics you need to
         self.twist_cmd = None
@@ -68,16 +70,17 @@ class DBWNode(object):
         self.dbw_enabled = False
         self.twist_sub = rospy.Subscriber('/twist_cmd', TwistStamped,
                                          self.twist_callback)
-        self.dbw_sub = rospy.Subscriber('/dbw_enabled', Bool,
+        self.dbw_sub = rospy.Subscriber('/vehicle/dbw_enabled', Bool,
                                          self.dbw_callback)
         self.velocity_sub = rospy.Subscriber('/current_velocity', TwistStamped,
-                                             lambda vel: self.current_velocity =
-                                             vel.twist.linear.x)
+                                             self.velocity_callback)
 
         self.loop()
 
     def loop(self):
         rate = rospy.Rate(50) # 50Hz
+        seq = -1
+        throttle, brake, steer = 0, 0, 0
         while not rospy.is_shutdown():
             # TODO: Get predicted throttle, brake, and steering using `twist_controller`
             # You should only publish the control commands if dbw is enabled
@@ -88,13 +91,23 @@ class DBWNode(object):
             #                                                     <any other argument you need>)
             # if <dbw is enabled>:
             #   self.publish(throttle, brake, steer)
-            throttle, brake, steer = 0, 0, 0
-            if self.twist_cmd is not None:
-                time = self.twist_cmd.header.stamp.secs
+            if self.twist_cmd is not None and seq != self.twist_cmd.header.seq:
+                seq = self.twist_cmd.header.seq
+                time = self.twist_cmd.header.stamp.secs%1000000
                 time += self.twist_cmd.header.stamp.nsecs*1e-9
-                throttle, brake, steer = self.controller.control(twist_cmd=self.twist_cmd,
-                                                                 dbw_enabled=self.dbw_enabled)
+                # rospy.logwarn(time)
+                wp_linear_velocity = self.twist_cmd.twist.linear.x
+                wp_angular_velocity = self.twist_cmd.twist.angular.z
+                throttle, brake, steer = self.controller.control(
+                    wp_linear_velocity,
+                    wp_angular_velocity,
+                    self.current_velocity,
+                    self.dbw_enabled,
+                    time
+                )
+                # rospy.logwarn("%s %s %s", throttle, brake, steer)
             if self.dbw_enabled is True:
+                # rospy.logwarn("%s %s %s", throttle, brake, steer)
                 self.publish(throttle, brake, steer)
             rate.sleep()
 
@@ -120,7 +133,10 @@ class DBWNode(object):
         self.twist_cmd = twist_cmd
 
     def dbw_callback(self, dbw_status):
-        self.dbw_enabled = dbw_status
+        self.dbw_enabled = dbw_status.data
+
+    def velocity_callback(self, velocity_msg):
+        self.current_velocity = velocity_msg.twist.linear.x
 
 if __name__ == '__main__':
     DBWNode()
