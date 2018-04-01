@@ -106,7 +106,7 @@ class TLDetector(object):
             min_dist = 1e6
             min_idx = -1
             for idx, wp in enumerate(self.waypoints.waypoints):
-                dist = dl(msg.pose.position, wp.pose.pose.position)
+                dist = dl(pose.position, wp.pose.pose.position)
                 if dist  < min_dist:
                     min_dist = dist
                     min_idx = idx
