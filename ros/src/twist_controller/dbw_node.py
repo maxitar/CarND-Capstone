@@ -69,11 +69,11 @@ class DBWNode(object):
         self.current_velocity = 0
         self.dbw_enabled = False
         self.twist_sub = rospy.Subscriber('/twist_cmd', TwistStamped,
-                                         self.twist_callback)
+                                         self.twist_cb)
         self.dbw_sub = rospy.Subscriber('/vehicle/dbw_enabled', Bool,
-                                         self.dbw_callback)
+                                         self.dbw_cb)
         self.velocity_sub = rospy.Subscriber('/current_velocity', TwistStamped,
-                                             self.velocity_callback)
+                                             self.velocity_cb)
 
         self.loop()
 
@@ -91,7 +91,7 @@ class DBWNode(object):
             #                                                     <any other argument you need>)
             # if <dbw is enabled>:
             #   self.publish(throttle, brake, steer)
-            if self.twist_cmd is not None and seq != self.twist_cmd.header.seq:
+            if self.twist_cmd and seq != self.twist_cmd.header.seq:
                 seq = self.twist_cmd.header.seq
                 time = self.twist_cmd.header.stamp.secs%1000000
                 time += self.twist_cmd.header.stamp.nsecs*1e-9
@@ -129,13 +129,13 @@ class DBWNode(object):
         bcmd.pedal_cmd = brake
         self.brake_pub.publish(bcmd)
 
-    def twist_callback(self, twist_cmd):
+    def twist_cb(self, twist_cmd):
         self.twist_cmd = twist_cmd
 
-    def dbw_callback(self, dbw_status):
+    def dbw_cb(self, dbw_status):
         self.dbw_enabled = dbw_status.data
 
-    def velocity_callback(self, velocity_msg):
+    def velocity_cb(self, velocity_msg):
         self.current_velocity = velocity_msg.twist.linear.x
 
 if __name__ == '__main__':

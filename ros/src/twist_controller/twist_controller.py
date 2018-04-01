@@ -18,7 +18,7 @@ class Controller(object):
                 current_velocity, dbw_enabled, timestamp):
         # Return throttle, brake, steer
         if dbw_enabled:
-            if self.last_timestamp is not None:
+            if self.last_timestamp:
                 elapsed_time = timestamp-self.last_timestamp
             else:
                 elapsed_time = 100000

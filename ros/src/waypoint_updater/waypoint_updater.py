@@ -24,11 +24,6 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 
-def dist(pt1, pt2):
-    dist_x = pt1.x-pt2.x
-    dist_y = pt1.y-pt2.y
-    return dist_x*dist_x+dist_y*dist_y
-
 class WaypointUpdater(object):
     def __init__(self):
         rospy.init_node('waypoint_updater')
@@ -49,15 +44,22 @@ class WaypointUpdater(object):
 
     def pose_cb(self, msg):
         # TODO: Implement
-        if self.waypoints is not None:
+        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
+        angle = lambda a, b: math.atan2(a.y-b.y, a.x-b.x)
+        if self.waypoints:
             min_dist = 1e6
             min_idx = -1
             for idx, wp in enumerate(self.waypoints.waypoints):
-                if dist(msg.pose.position, wp.pose.pose.position) < min_dist:
-                    min_dist = dist(msg.pose.position, wp.pose.pose.position)
+                dist = dl(msg.pose.position, wp.pose.pose.position)
+                if dist  < min_dist:
+                    min_dist = dist
                     min_idx = idx
-            # print(type(self.waypoints), min_idx)
-            min_idx += 1
+            wp_pose = self.waypoints.waypoints[min_idx].pose.pose.position
+            car_pose = msg.pose.position
+            wp_to_car_orient = angle(wp_pose, car_pose)
+            car_orient = math.acos(msg.pose.orientation.w)*2
+            if math.fabs(wp_to_car_orient - car_orient) > math.pi*0.25:
+                min_idx += 1
             len_wp = len(self.waypoints.waypoints)
             end_wp = max(0, min_idx + LOOKAHEAD_WPS - len_wp)
             final_waypoints = Lane()
@@ -68,10 +70,6 @@ class WaypointUpdater(object):
             self.final_waypoints_pub.publish(final_waypoints)
 
     def waypoints_cb(self, waypoints):
-        # TODO: Implement
-        # print(waypoints.waypoints[0].pose.pose)
-        # print(waypoints.header)
-        # print(waypoints.waypoints[0])
         self.waypoints = waypoints
 
     def traffic_cb(self, msg):
