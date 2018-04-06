@@ -28,17 +28,18 @@ class WaypointUpdater(object):
     def __init__(self):
         rospy.init_node('waypoint_updater')
 
-        self.waypoints = None
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
-        # rospy.Subscriber('/traffic_waypoint', Int32, self.)
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
 
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
+        self.waypoints = None
+        self.traffic_wp = -1
 
         rospy.spin()
 
@@ -58,23 +59,33 @@ class WaypointUpdater(object):
             car_pose = msg.pose.position
             wp_to_car_orient = angle(wp_pose, car_pose)
             car_orient = math.acos(msg.pose.orientation.w)*2
-            if math.fabs(wp_to_car_orient - car_orient) > math.pi*0.25:
+            if abs(wp_to_car_orient - car_orient) > math.pi*0.25:
                 min_idx += 1
-            len_wp = len(self.waypoints.waypoints)
-            end_wp = max(0, min_idx + LOOKAHEAD_WPS - len_wp)
             final_waypoints = Lane()
             final_waypoints.header = self.waypoints.header
-            final_waypoints.waypoints = \
-                    self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS] \
-                    + self.waypoints.waypoints[:end_wp]
+            final_waypoints.waypoints = self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS]
+            #wp_speeds = [wp.twist.twist.linear for wp in final_waypoints.waypoints]
+            if self.traffic_wp != -1:
+                tl_local_wp = self.traffic_wp-min_idx
+                end_wp = max(tl_local_wp - 20, 0)
+                # rospy.logwarn("{} {}".format(tl_local_wp, self.traffic_wp))
+                vel_step = \
+                    final_waypoints.waypoints[tl_local_wp+1].twist.twist.linear.x*0.05
+                for idx, wp in enumerate(final_waypoints.waypoints[tl_local_wp:end_wp:-1]):
+                    wp.twist.twist.linear.x = idx*vel_step
+            else:
+                for wp in final_waypoints.waypoints:
+                    wp.twist.twist.linear.x = 11
             self.final_waypoints_pub.publish(final_waypoints)
+            #for wp, speed in zip(final_waypoints.waypoints, wp_speeds):
+            #    wp.twist.twist.linear = speed
 
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
-        pass
+        self.traffic_wp = msg.data
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later

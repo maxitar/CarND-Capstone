@@ -62,6 +62,8 @@ class DBWNode(object):
                               'max_steer_angle' : max_steer_angle}
         self.controller = Controller(vehicle_mass=vehicle_mass,
                                      wheel_radius=wheel_radius,
+                                     decel_limit=decel_limit,
+                                     accel_limit=accel_limit,
                                      yaw_control_params=yaw_control_params)
 
         # TODO: Subscribe to all the topics you need to
@@ -95,7 +97,6 @@ class DBWNode(object):
                 seq = self.twist_cmd.header.seq
                 time = self.twist_cmd.header.stamp.secs%1000000
                 time += self.twist_cmd.header.stamp.nsecs*1e-9
-                # rospy.logwarn(time)
                 wp_linear_velocity = self.twist_cmd.twist.linear.x
                 wp_angular_velocity = self.twist_cmd.twist.angular.z
                 throttle, brake, steer = self.controller.control(
@@ -105,9 +106,7 @@ class DBWNode(object):
                     self.dbw_enabled,
                     time
                 )
-                # rospy.logwarn("%s %s %s", throttle, brake, steer)
             if self.dbw_enabled is True:
-                # rospy.logwarn("%s %s %s", throttle, brake, steer)
                 self.publish(throttle, brake, steer)
             rate.sleep()
 

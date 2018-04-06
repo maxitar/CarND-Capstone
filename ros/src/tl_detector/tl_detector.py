@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import math
 import rospy
 from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped, Pose
@@ -10,6 +11,7 @@ from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
 import yaml
+from heapq import heappush, heappop
 
 STATE_COUNT_THRESHOLD = 3
 
@@ -102,14 +104,16 @@ class TLDetector(object):
         """
         #TODO implement
         dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
+        min_idx = -1
         if self.waypoints:
             min_dist = 1e6
-            min_idx = -1
             for idx, wp in enumerate(self.waypoints.waypoints):
                 dist = dl(pose.position, wp.pose.pose.position)
-                if dist  < min_dist:
+                if dist < min_dist:
                     min_dist = dist
                     min_idx = idx
+        else:
+            rospy.logwarn("NO WAYPOINTS")
         return min_idx
 
     def get_light_state(self, light):
@@ -131,6 +135,30 @@ class TLDetector(object):
         #Get classification
         return self.light_classifier.get_classification(cv_image)
 
+    def get_closest_light(self, car_wp):
+        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
+        lights = []
+        for idx, light in enumerate(self.lights):
+            dist = dl(self.pose.pose.position, light.pose.pose.position)
+            if dist < 75.:
+                heappush(lights,(dist, light, idx))
+        while lights:
+            light_tuple = heappop(lights)
+            light = light_tuple[1]
+            light_idx = light_tuple[2]
+            # rospy.logwarn(car_wp)
+            for idx, wp in enumerate(self.waypoints.waypoints[car_wp:car_wp+150]):
+                if dl(wp.pose.pose.position, light.pose.pose.position) <= 20:
+                    return light_idx, light
+                    # return car_wp+idx, light
+#                    wp_orient = math.acos(wp.pose.pose.orientation.w)*2
+#                    tl_orient = math.acos(light.pose.pose.orientation.w)*2
+#                    angle_diff = wp_orient-tl_orient
+#                    if abs(angle_diff) < math.pi/8 or \
+#                        abs(math.pi*2-angle_diff) < math.pi/8:
+#                        return car_wp+idx, light
+        return -1, None
+
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
             location and color
@@ -146,13 +174,14 @@ class TLDetector(object):
         stop_line_positions = self.config['stop_line_positions']
         if self.pose:
             car_position = self.get_closest_waypoint(self.pose.pose)
+            light_idx, light = self.get_closest_light(car_position)
 
         #TODO find the closest visible traffic light (if one exists)
 
         if light:
             state = self.get_light_state(light)
-            return light_wp, state
-        self.waypoints = None
+            state = light.state
+            return stop_line_positions[light_idx], state
         return -1, TrafficLight.UNKNOWN
 
 if __name__ == '__main__':
