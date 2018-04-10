@@ -4,8 +4,10 @@ import rospy
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
 from std_msgs.msg import Int32
+from scipy.spatial import KDTree
 
 import math
+from copy import deepcopy
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -30,15 +32,12 @@ class WaypointUpdater(object):
 
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
-
-        # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
         rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
-
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
-        # TODO: Add other member variables you need below
         self.waypoints = None
+        self.waypoints_tree = None
         self.traffic_wp = -1
 
         rospy.spin()
@@ -48,13 +47,9 @@ class WaypointUpdater(object):
         dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
         angle = lambda a, b: math.atan2(a.y-b.y, a.x-b.x)
         if self.waypoints:
-            min_dist = 1e6
-            min_idx = -1
-            for idx, wp in enumerate(self.waypoints.waypoints):
-                dist = dl(msg.pose.position, wp.pose.pose.position)
-                if dist  < min_dist:
-                    min_dist = dist
-                    min_idx = idx
+            car_x = msg.pose.position.x
+            car_y = msg.pose.position.y
+            min_idx = self.waypoints_tree.query([car_x, car_y])[1]
             wp_pose = self.waypoints.waypoints[min_idx].pose.pose.position
             car_pose = msg.pose.position
             wp_to_car_orient = angle(wp_pose, car_pose)
@@ -62,26 +57,57 @@ class WaypointUpdater(object):
             if abs(wp_to_car_orient - car_orient) > math.pi*0.25:
                 min_idx += 1
             final_waypoints = Lane()
-            final_waypoints.header = self.waypoints.header
-            final_waypoints.waypoints = self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS]
-            #wp_speeds = [wp.twist.twist.linear for wp in final_waypoints.waypoints]
-            if self.traffic_wp != -1:
-                tl_local_wp = self.traffic_wp-min_idx
-                end_wp = max(tl_local_wp - 20, 0)
-                # rospy.logwarn("{} {}".format(tl_local_wp, self.traffic_wp))
-                vel_step = \
-                    final_waypoints.waypoints[tl_local_wp+1].twist.twist.linear.x*0.05
-                for idx, wp in enumerate(final_waypoints.waypoints[tl_local_wp:end_wp:-1]):
-                    wp.twist.twist.linear.x = idx*vel_step
+            # final_waypoints.header = self.waypoints.header
+            tl_local_wp = self.traffic_wp - min_idx# - 3
+            base_wp = self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS]
+            if tl_local_wp >= 0:
+                # final_waypoints.header = copy.deepcopy(final_waypoints.header)
+#                 temp = []
+#                 for idx, wp in enumerate(base_wp):
+#                     p = Waypoint()
+#                     p.pose = wp.pose
+# 
+#                     stop_idx = max(self.traffic_wp - min_idx - 2, 0)
+#                     dist = self.distance(base_wp, idx, stop_idx)
+#                     vel = math.sqrt(2*5*dist)
+#                     if vel < 1. or stop_idx <= idx:
+#                         vel = 0.
+#                     p.twist.twist.linear.x = min(vel, wp.twist.twist.linear.x)
+#                     temp.append(p)
+#                 final_waypoints.waypoints = temp
+                 final_waypoints.waypoints = \
+                     deepcopy(self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS])
+                 end_wp = max(tl_local_wp - 50, 0)
+                 # final_waypoints.waypoints = copy.deepcopy(final_waypoints.waypoints)
+                 # final_waypoints = copy.deepcopy(final_waypoints)
+                 rospy.logwarn("{} {}".format(tl_local_wp, self.traffic_wp))
+                 vel_step = \
+                     final_waypoints.waypoints[tl_local_wp+1].twist.twist.linear.x*0.02
+                 tl_local_wp = max(tl_local_wp - 3, 0)
+                 for idx, wp in enumerate(final_waypoints.waypoints[tl_local_wp:end_wp:-1]):
+                     wp.twist.twist.linear.x = int(idx*vel_step)
+                 for wp in final_waypoints.waypoints[tl_local_wp+1:]:
+                     wp.twist.twist.linear.x = 0.
+                 for idx, wp in enumerate(final_waypoints.waypoints):
+                     wp.pose = base_wp[idx].pose
             else:
-                for wp in final_waypoints.waypoints:
-                    wp.twist.twist.linear.x = 11
+                # final_waypoints.waypoints = self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS]
+                # final_waypoints.waypoints = deepcopy(base_wp)
+                temp = []
+                for wp in base_wp:
+                    p = Waypoint()
+                    p.pose = wp.pose
+                    p.twist.twist.linear.x = wp.twist.twist.linear.x
+                    temp.append(p)
+                final_waypoints.waypoints = temp
+
             self.final_waypoints_pub.publish(final_waypoints)
-            #for wp, speed in zip(final_waypoints.waypoints, wp_speeds):
-            #    wp.twist.twist.linear = speed
 
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
+        wp2d = [[wp.pose.pose.position.x, wp.pose.pose.position.y] for wp in
+                waypoints.waypoints]
+        self.waypoints_tree = KDTree(wp2d)
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
