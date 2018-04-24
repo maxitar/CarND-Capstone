@@ -46,7 +46,7 @@ class TLDetector(object):
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
 
         self.bridge = CvBridge()
-        self.light_classifier = TLClassifier()
+        self.light_classifier = TLClassifier(use_nn=True)
         self.listener = tf.TransformListener()
 
         self.state = TrafficLight.UNKNOWN
@@ -108,20 +108,7 @@ class TLDetector(object):
             int: index of the closest waypoint in self.waypoints
 
         """
-        #TODO implement
         return self.waypoints_tree.query([x, y])[1]
-#        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
-#        min_idx = -1
-#        if self.waypoints:
-#            min_dist = 1e6
-#            for idx, wp in enumerate(self.waypoints.waypoints):
-#                dist = dl(pose.position, wp.pose.pose.position)
-#                if dist < min_dist:
-#                    min_dist = dist
-#                    min_idx = idx
-#        else:
-#            rospy.logwarn("NO WAYPOINTS")
-#        return min_idx
 
     def get_light_state(self, light):
         """Determines the current color of the traffic light
@@ -140,57 +127,19 @@ class TLDetector(object):
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
         #Get classification
-        return self.light_classifier.get_classification(cv_image)
-
-    def get_closest_light(self, car_wp):
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
-        lights = []
-        for idx, light in enumerate(self.lights):
-            dist = dl(self.pose.pose.position, light.pose.pose.position)
-            if dist < 75.:
-                heappush(lights,(dist, light, idx))
-        while lights:
-            light_tuple = heappop(lights)
-            light = light_tuple[1]
-            light_idx = light_tuple[2]
-            # rospy.logwarn(car_wp)
-            for idx, wp in enumerate(self.waypoints.waypoints[car_wp:car_wp+150]):
-                if dl(wp.pose.pose.position, light.pose.pose.position) <= 20:
-                    #return light_idx, light
-                    return car_wp+idx, light
-#                    wp_orient = math.acos(wp.pose.pose.orientation.w)*2
-#                    tl_orient = math.acos(light.pose.pose.orientation.w)*2
-#                    angle_diff = wp_orient-tl_orient
-#                    if abs(angle_diff) < math.pi/8 or \
-#                        abs(math.pi*2-angle_diff) < math.pi/8:
-#                        return car_wp+idx, light
-        return -1, None
+#        return self.light_classifier.get_classification(cv_image)
+        return self.light_classifier.get_classification_nn(cv_image,
+                                                           self.camera_image.header.seq)
 
     def get_closest_light2(self, car_wp, stop_line_positions):
         min_wp_dist = len(self.waypoints.waypoints)
-        min_idx = -1
-        for idx, sl in enumerate(stop_line_positions):
-            sl_wp = self.waypoints_tree.query([sl[0], sl[1]])[1]
-            if sl_wp - car_wp >= 0 and sl_wp - car_wp < min_wp_dist:
-                min_wp_dist = sl_wp - car_wp
-                min_idx = idx
-        return min_wp_dist + car_wp, self.lights[min_idx]
-        dl = lambda a, b: math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
-        lights = []
+        closest_light = None
         for idx, stop_line in enumerate(stop_line_positions):
-            sl_pos = [stop_line[0], stop_line[1]]
-            car_pos = [self.pose.pose.position.x, self.pose.pose.position.y]
-            dist = dl(car_pos, sl_pos)
-            if dist < 75.:
-                heappush(lights,(dist, idx))
-        while lights:
-            sl_tuple = heappop(lights)
-            sl_idx = light_tuple[1]
-            for idx, wp in enumerate(self.waypoints.waypoints[car_wp:car_wp+150]):
-                wp_pos = [wp.pose.pose.position.x, wp.pose.pose.position.y]
-                if dl(wp.pose.pose.position, light.pose.pose.position) <= 20:
-                    return light_idx, light
-        return -1, None
+            stop_line_wp = self.waypoints_tree.query([stop_line[0], stop_line[1]])[1]
+            if stop_line_wp - car_wp >= 0 and stop_line_wp - car_wp < min_wp_dist:
+                min_wp_dist = stop_line_wp - car_wp
+                closest_light = self.lights[idx]
+        return min_wp_dist + car_wp, closest_light
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -205,22 +154,24 @@ class TLDetector(object):
 
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
-        if self.pose:
+        #state = self.get_light_state(light)
+        #rospy.logwarn("STATE {}".format(state))
+        if self.pose and self.waypoints_tree:
             car_x = self.pose.pose.position.x
             car_y = self.pose.pose.position.y
-            car_position = self.get_closest_waypoint(car_x, car_y)
-            light_idx, light = self.get_closest_light(car_position)
-            light_idx, light = self.get_closest_light2(car_position,
-                                                       stop_line_positions)
-            # rospy.logwarn("{}, {}".format(car_position, light_idx))
-            if light_idx - car_position > 150:
+            car_wp = self.get_closest_waypoint(car_x, car_y)
+            light_wp, light = self.get_closest_light2(car_wp,
+                                                      stop_line_positions)
+            # rospy.logwarn("{}, {}".format(car_wp, light_wp))
+            if light_wp - car_wp > 150:
                 light = None
 
-        #TODO find the closest visible traffic light (if one exists)
-
         if light:
+            dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
+            dist = dl(self.pose.pose.position, light.pose.pose.position)
+            #rospy.logwarn("DIST TO LIGHT: ".format(dist))
             state = self.get_light_state(light)
-            return light_idx, state
+            return light_wp, state
         return -1, TrafficLight.UNKNOWN
 
 if __name__ == '__main__':

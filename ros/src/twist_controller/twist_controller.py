@@ -15,32 +15,35 @@ class Controller(object):
         self.wheel_radius = wheel_radius
         self.decel_limit = decel_limit
         self.accel_limit = accel_limit
-        # self.throttle_control = pid.PID(kp=0.3, ki=0.1, kd=0, mn=0, mx=0.2)
         self.throttle_control = pid.PID(kp=0.5, ki=0, kd=0, mn=0, mx=0.5)
         self.yaw_control = YawController(**yaw_control_params)
-        self.lpf_velocity = LowPassFilter(tau=0.5, ts=0.02)
+        self.lpf_velocity = LowPassFilter(tau=0.5, ts=0.2)
         self.last_timestamp = None
 
     def control(self, wp_linear_velocity, wp_angular_velocity,
                 current_velocity, dbw_enabled, timestamp):
         # Return throttle, brake, steer
         if dbw_enabled:
-            if self.last_timestamp:
-                elapsed_time = timestamp-self.last_timestamp
-            else:
-                elapsed_time = 0.00000001 # 100000
+            elapsed_time = 1 # Does not matter since ki=kd=0
             self.last_timestamp = timestamp
+            original_velocity = current_velocity
             current_velocity = self.lpf_velocity.filt(current_velocity)
             vel_diff = wp_linear_velocity-current_velocity
             throttle = self.throttle_control.step(vel_diff, elapsed_time)
             steer = self.yaw_control.get_steering(wp_linear_velocity,
                                                   wp_angular_velocity,
                                                   current_velocity)
-            if current_velocity < 0.1 and wp_linear_velocity <= 0.01:
+            if current_velocity < 1. and wp_linear_velocity <= 0.01:
+                throttle = 0
                 brake = 400
             else:
                 brake = min(-vel_diff, abs(self.decel_limit))*self.vehicle_mass*self.wheel_radius
                 brake = max(brake, 0)
+                if brake > 0:
+                    rospy.logwarn('{} {} {} {}'.format(brake,
+                                                       vel_diff,
+                                                       current_velocity,
+                                                       original_velocity))
         else:
             self.throttle_control.reset()
             self.last_timestamp = None
