@@ -2,9 +2,6 @@ from styx_msgs.msg import TrafficLight
 import tensorflow as tf
 import numpy as np
 import cv2
-import time
-
-import os # For debugging
 
 def filter_boxes(min_score, boxes, scores, classes):
     """Return boxes with a confidence >= `min_score`"""
@@ -49,25 +46,6 @@ def get_largest_box(boxes):
     box_areas = diff_x*diff_y
     return np.argmax(box_areas)
 
-frame_nr = 0
-colors = ((0,0,255),(0,255,255),(0,255,0))
-out_folder = os.path.expanduser('~/project/outimg/')+str(time.time())+'/'
-os.makedirs(out_folder)
-def save_image_with_text(image, boxes, class_nn, class_cv):
-    global frame_nr
-    for box in boxes:
-        top, left, bottom, right = box
-        color = colors[class_nn]
-        cv2.rectangle(image,(left,top),(right,bottom),color,2)
-    largest_box = boxes[get_largest_box(boxes)]
-    top, left, bottom, right = largest_box
-    color = colors[class_cv]
-    cv2.rectangle(image,(left,top),(right,bottom),color,1)
-
-    out_path = out_folder+'{:04}'.format(frame_nr)+'.jpg'
-    frame_nr += 1
-    cv2.imwrite(out_path, image)
-
 def get_light_color(image, box):
     box = box.astype(int)
     patch = image[box[0]:box[2], box[1]:box[3]]
@@ -85,10 +63,12 @@ def get_light_color(image, box):
 
 class TLClassifier(object):
     def __init__(self, use_nn):
-        #TODO load classifier
         self.use_nn = use_nn
         if use_nn:
+            # For use with TensorFlow 1.3+
             nn_path = './light_classification/nn_model/frozen_inference_graph_tf13.pb'
+            # For use with TensorFlow 1.7+
+            #nn_path = './light_classification/nn_model/frozen_inference_graph_tf17.pb'
             self.graph = load_graph(nn_path)
             # The input placeholder for the image.
             # `get_tensor_by_name` returns the Tensor with the associated name in the Graph.
@@ -141,7 +121,7 @@ class TLClassifier(object):
             return TrafficLight.YELLOW
         return TrafficLight.UNKNOWN
 
-    def get_classification_nn(self, image, seq):
+    def get_classification_nn(self, image):
         """Determines the color of the traffic light in the image
 
         Args:
@@ -161,7 +141,6 @@ class TLClassifier(object):
         for left, top in zip(left_starts, top_starts):
             patches.append(image[top:top+patch_height, left:left+patch_width])
         # Actual detection.
-        start = time.time()
         (boxes, scores, classes) = self.sess.run([self.detection_boxes,
                                                   self.detection_scores,
                                                   self.detection_classes],
@@ -181,20 +160,7 @@ class TLClassifier(object):
             return TrafficLight.UNKNOWN
         largest_box_idx = get_largest_box(boxes)
         largest_box = boxes[largest_box_idx]
-#        print(largest_box_idx, largest_box)
         state = get_light_color(image, largest_box)
-        state_nn = int(round(classes[np.argmax(scores)])+0.001)
-#        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-#        state_cv = self.get_classification_cv(image)
-#        global frame_nr
-#        frame_nr = seq
-#        save_image_with_text(image, boxes, 3-state_nn, 3-state)
-#        print("CV: {}\tNN: {}\t NN+CV: {}".format(state_cv, 3-state_nn, 3-state))
-#        if state == state_nn:
-#            print("HIGH CONFIDENCE")
-#        print("Detection time: {} Highest confidence: {}"\
-#              .format(time.time()-start, np.max(scores)))
-        #print(state)
         if state == 3:
             return TrafficLight.RED
         if state == 2:

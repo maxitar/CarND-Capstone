@@ -46,6 +46,8 @@ class TLDetector(object):
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
 
         self.bridge = CvBridge()
+        # In simulator use_nn=False is more robust since it determines
+        # traffic light color by using color information
         self.light_classifier = TLClassifier(use_nn=True)
         self.listener = tf.TransformListener()
 
@@ -127,10 +129,7 @@ class TLDetector(object):
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
         #Get classification
-#        return self.light_classifier.get_classification(cv_image)
-        # For debugging
-        return self.light_classifier.get_classification_nn(cv_image,
-                                                           self.camera_image.header.seq)
+        return self.light_classifier.get_classification(cv_image)
 
     def get_closest_light(self, car_wp, stop_line_positions):
         min_wp_dist = len(self.waypoints.waypoints)
@@ -155,22 +154,16 @@ class TLDetector(object):
 
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
-        #state = self.get_light_state(light)
-        #rospy.logwarn("STATE {}".format(state))
         if self.pose and self.waypoints_tree:
             car_x = self.pose.pose.position.x
             car_y = self.pose.pose.position.y
             car_wp = self.get_closest_waypoint(car_x, car_y)
             light_wp, light = self.get_closest_light(car_wp,
                                                      stop_line_positions)
-            # rospy.logwarn("{}, {}".format(car_wp, light_wp))
             if light_wp - car_wp > 150:
                 light = None
 
         if light:
-            dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
-            dist = dl(self.pose.pose.position, light.pose.pose.position)
-            #rospy.logwarn("DIST TO LIGHT: ".format(dist))
             state = self.get_light_state(light)
             return light_wp, state
         return -1, TrafficLight.UNKNOWN

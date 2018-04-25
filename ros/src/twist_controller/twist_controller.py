@@ -44,12 +44,6 @@ class Controller(object):
             else:
                 brake = min(-vel_diff, abs(self.decel_limit))*self.vehicle_mass*self.wheel_radius
                 brake = max(brake, 0)
-                # For debugging
-                if brake > 0:
-                    rospy.logwarn('{} {} {} {}'.format(brake,
-                                                       vel_diff,
-                                                       current_velocity,
-                                                       original_velocity))
         else:
             self.throttle_control.reset()
             self.last_timestamp = None
