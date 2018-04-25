@@ -50,7 +50,7 @@ class WaypointUpdater(object):
 
     # For debuging
     def velocity_cb(self, msg):
-        self.vel = msg.twist.linear.x
+        self.velocity = msg.twist.linear.x
 
     # For debuging
     def brake_cb(self, msg):
@@ -58,10 +58,10 @@ class WaypointUpdater(object):
 
     def loop(self):
         rate = rospy.Rate(50)
-        decel_limit = abs(rospy.get_param('/dbz_node/decel_limit', -5))
+        a0 = -3 # m/s^2; constant acceleration coefficient
         # For debuging
         if DEBUG:
-            self.vel = None
+            self.velocity = None
             start_time = rospy.get_time()
             out_path = '/home/maxitar/project/sim_data.txt'
             rospy.Subscriber('/current_velocity', TwistStamped, self.velocity_cb)
@@ -71,20 +71,31 @@ class WaypointUpdater(object):
         while not rospy.is_shutdown():
             if self.waypoints_tree and self.pose:
                 min_idx = self.get_closest_waypoint()
+                min_idx_vec = self.get_closest_waypoint_vec()
+                #rospy.logwarn("{} {}".format(min_idx, min_idx_vec))
+                min_idx = min_idx_vec
                 final_waypoints = Lane()
-                base_wp = self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS]
+                base_waypoints = self.waypoints.waypoints[min_idx:min_idx+LOOKAHEAD_WPS]
                 if self.traffic_wp != -1 and self.traffic_wp - min_idx <= LOOKAHEAD_WPS:
                     temp = []
                     stop_idx = max(self.traffic_wp - min_idx - 4, 0)
-                    for idx, wp in enumerate(base_wp):
+                    # Precompute distances of all waypoints to traffic light
+                    # to avoid O(n^2) computations of each distance individually
+                    distances = self.get_relative_distances(base_waypoints,
+                                                            stop_idx)
+                    for idx, wp in enumerate(base_waypoints):
                         p = Waypoint()
                         p.pose = wp.pose
 
-                        dist = self.distance(base_wp, idx, stop_idx)
-                        vel = math.sqrt(2*decel_limit*dist)
-                        if vel < 1.:
-                            vel = 0.
-                        p.twist.twist.linear.x = min(vel, wp.twist.twist.linear.x)
+                        dist = distances[idx]
+                        # For debugging
+                        #dist = self.distance(base_waypoints, idx, stop_idx)
+                        #rospy.logwarn('{} {}'.format(dist, distances[idx]))
+                        # Velocity for constant deceleration
+                        target_velocity = math.sqrt(-2*a0*dist)
+                        if target_velocity < 1.:
+                            target_velocity = 0.
+                        p.twist.twist.linear.x = min(target_velocity, wp.twist.twist.linear.x)
                         temp.append(p)
 
                     final_waypoints.waypoints = temp
@@ -94,21 +105,21 @@ class WaypointUpdater(object):
                         next_velocity = final_waypoints.waypoints[0].twist.twist.linear.x
                         car_x = self.pose.pose.position.x
                         car_y = self.pose.pose.position.y
-                        stop_wp = base_wp[stop_idx]
+                        stop_wp = base_waypoints[stop_idx]
                         stop_x = stop_wp.pose.pose.position.x
                         stop_y = stop_wp.pose.pose.position.y
                         dist = math.sqrt((car_x-stop_x)**2 + (car_y-stop_y)**2)
-                        #dist = self.distance(base_wp, 0, stop_idx)
-                        des_velocity = math.sqrt(2*decel_limit*dist)
+                        #dist = self.distance(base_waypoints, 0, stop_idx)
+                        des_velocity = math.sqrt(-2*a0*dist)
                         with open(out_path, 'a+') as vel_file:
                             vel_file.write("{} {} {} {} {} {}\n".format(time_elapsed,
                                                                         dist,
-                                                                        self.vel,
+                                                                        self.velocity,
                                                                         next_velocity,
                                                                         des_velocity,
                                                                         self.brake))
                 else:
-                    final_waypoints.waypoints = base_wp
+                    final_waypoints.waypoints = base_waypoints
 
                 self.final_waypoints_pub.publish(final_waypoints)
             rate.sleep()
@@ -122,7 +133,34 @@ class WaypointUpdater(object):
         car_pose = self.pose.pose.position
         wp_to_car_orient = angle(wp_pose, car_pose)
         car_orient = math.acos(self.pose.pose.orientation.w)*2
+        # For debugging
+#        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+#        rospy.logwarn(dl(wp_pose, car_pose))
+        #
         if abs(wp_to_car_orient - car_orient) > math.pi*0.25:
+            # For debugging
+#            rospy.logwarn("Original closest: {}".format(min_idx))
+#            wp1_x = wp_pose.x
+#            wp1_y = wp_pose.y
+#            wp_pose = self.waypoints.waypoints[min_idx+1].pose.pose.position
+#            wp2_x = wp_pose.x
+#            wp2_y = wp_pose.y
+#            rospy.logwarn("WP min: {},{} WP next: {},{} CAR: {},{}".format(
+#                wp1_x, wp1_y, wp2_x, wp2_y, car_x, car_y))
+            #
+            min_idx += 1
+        return min_idx
+
+    def get_closest_waypoint_vec(self):
+        car_x = self.pose.pose.position.x
+        car_y = self.pose.pose.position.y
+        min_idx = self.waypoints_tree.query([car_x, car_y])[1]
+        wp_pose1 = self.waypoints.waypoints[min_idx].pose.pose.position
+        vec1 = [car_x - wp_pose1.x, car_y - wp_pose1.y]
+        wp_pose2 = self.waypoints.waypoints[min_idx+1].pose.pose.position
+        vec2 = [wp_pose2.x - wp_pose1.x, wp_pose2.y - wp_pose1.y]
+        prod = vec1[0]*vec2[0] + vec1[1]*vec2[1]
+        if prod > 0:
             min_idx += 1
         return min_idx
 
@@ -136,7 +174,6 @@ class WaypointUpdater(object):
         self.waypoints_tree = KDTree(wp2d)
 
     def traffic_cb(self, msg):
-        # TODO: Callback for /traffic_waypoint message. Implement
         self.traffic_wp = msg.data
 
     def obstacle_cb(self, msg):
@@ -156,6 +193,26 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+
+    def get_relative_distances(self, waypoints, anchor_wp):
+        '''
+        Computes the distances of all nodes in 'waypoints' to anchor_wp in
+        linear time
+
+        Args:
+            waypoints (Waypoint[]): array of waypoints
+            anchor_wp (int): index of anchor waypoint in 'waypoints'
+
+        Returns:
+            list: relative Euclidean distances of all waypoints to anchor_wp
+        '''
+        dist = 0
+        distances = [0 for i in range(len(waypoints))]
+        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+        for i in range(anchor_wp, 0, -1):
+            dist += dl(waypoints[i].pose.pose.position, waypoints[i-1].pose.pose.position)
+            distances[i-1] = dist
+        return distances
 
 
 if __name__ == '__main__':

@@ -15,10 +15,12 @@ class Controller(object):
         self.wheel_radius = wheel_radius
         self.decel_limit = decel_limit
         self.accel_limit = accel_limit
-        self.throttle_control = pid.PID(kp=0.5, ki=0, kd=0, mn=0, mx=0.5)
+        self.throttle_control = pid.PID(kp=0.5, ki=0, kd=0, mn=0,
+                                        mx=accel_limit)
         self.yaw_control = YawController(**yaw_control_params)
         self.lpf_velocity = LowPassFilter(tau=0.5, ts=0.2)
         self.last_timestamp = None
+        self.last_throttle = 0
 
     def control(self, wp_linear_velocity, wp_angular_velocity,
                 current_velocity, dbw_enabled, timestamp):
@@ -30,6 +32,9 @@ class Controller(object):
             current_velocity = self.lpf_velocity.filt(current_velocity)
             vel_diff = wp_linear_velocity-current_velocity
             throttle = self.throttle_control.step(vel_diff, elapsed_time)
+            # Limit throttle growth, but let it decrease as usual
+            throttle = min(self.last_throttle+0.002, throttle)
+            self.last_throttle = throttle
             steer = self.yaw_control.get_steering(wp_linear_velocity,
                                                   wp_angular_velocity,
                                                   current_velocity)
@@ -39,6 +44,7 @@ class Controller(object):
             else:
                 brake = min(-vel_diff, abs(self.decel_limit))*self.vehicle_mass*self.wheel_radius
                 brake = max(brake, 0)
+                # For debugging
                 if brake > 0:
                     rospy.logwarn('{} {} {} {}'.format(brake,
                                                        vel_diff,

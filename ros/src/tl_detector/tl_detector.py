@@ -102,7 +102,7 @@ class TLDetector(object):
         """Identifies the closest path waypoint to the given position
             https://en.wikipedia.org/wiki/Closest_pair_of_points_problem
         Args:
-            pose (Pose): position to match a waypoint to
+            x, y (float): position to match a waypoint to
 
         Returns:
             int: index of the closest waypoint in self.waypoints
@@ -128,10 +128,11 @@ class TLDetector(object):
 
         #Get classification
 #        return self.light_classifier.get_classification(cv_image)
+        # For debugging
         return self.light_classifier.get_classification_nn(cv_image,
                                                            self.camera_image.header.seq)
 
-    def get_closest_light2(self, car_wp, stop_line_positions):
+    def get_closest_light(self, car_wp, stop_line_positions):
         min_wp_dist = len(self.waypoints.waypoints)
         closest_light = None
         for idx, stop_line in enumerate(stop_line_positions):
@@ -160,8 +161,8 @@ class TLDetector(object):
             car_x = self.pose.pose.position.x
             car_y = self.pose.pose.position.y
             car_wp = self.get_closest_waypoint(car_x, car_y)
-            light_wp, light = self.get_closest_light2(car_wp,
-                                                      stop_line_positions)
+            light_wp, light = self.get_closest_light(car_wp,
+                                                     stop_line_positions)
             # rospy.logwarn("{}, {}".format(car_wp, light_wp))
             if light_wp - car_wp > 150:
                 light = None

@@ -78,14 +78,9 @@ class DBWNode(object):
 
     def loop(self):
         rate = rospy.Rate(50) # 50Hz
-        seq = -1
         throttle, brake, steer = 0, 0, 0
         while not rospy.is_shutdown():
-            #if self.twist_cmd and seq != self.twist_cmd.header.seq:
             if self.twist_cmd:
-                seq = self.twist_cmd.header.seq
-                time = self.twist_cmd.header.stamp.secs%1000000
-                time += self.twist_cmd.header.stamp.nsecs*1e-9
                 wp_linear_velocity = self.twist_cmd.twist.linear.x
                 wp_angular_velocity = self.twist_cmd.twist.angular.z
                 throttle, brake, steer = self.controller.control(
@@ -93,7 +88,7 @@ class DBWNode(object):
                     wp_angular_velocity,
                     self.current_velocity,
                     self.dbw_enabled,
-                    time
+                    rospy.get_time()
                 )
             if self.dbw_enabled:
                 self.publish(throttle, brake, steer)

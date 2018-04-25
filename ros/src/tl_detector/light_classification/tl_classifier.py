@@ -88,7 +88,7 @@ class TLClassifier(object):
         #TODO load classifier
         self.use_nn = use_nn
         if use_nn:
-            nn_path = './light_classification/nn_model/frozen_inference_graph.pb'
+            nn_path = './light_classification/nn_model/frozen_inference_graph_tf13.pb'
             self.graph = load_graph(nn_path)
             # The input placeholder for the image.
             # `get_tensor_by_name` returns the Tensor with the associated name in the Graph.
