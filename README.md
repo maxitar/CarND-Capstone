@@ -4,11 +4,19 @@
 ---
 This is the project repo for the final project of the Udacity Self-Driving Car Nanodegree: Programming a Real Self-Driving Car.
 
-## Installation
+# Table of Contents
+* [Installation](#installation)
+* [Usage](#usage)
+* [Main Objectives](#main-objectives)
+* [Waypoint Publishing](#waypoint-publishing)
+* [Drive by Wire and Control](#drive-by-wire-and-control)
+* [Traffic Light Detection](#traffic-light-detection)
+
+# Installation
 
 Please use **one** of the two installation options, either native **or** docker installation.
 
-### Native Installation
+## Native Installation
 
 * Be sure that your workstation is running Ubuntu 16.04 Xenial Xerus or Ubuntu 14.04 Trusty Tahir. [Ubuntu downloads can be found here](https://www.ubuntu.com/download/desktop).
 * If using a Virtual Machine to install Ubuntu, use the following configuration as minimum:
@@ -25,7 +33,7 @@ Please use **one** of the two installation options, either native **or** docker 
   * Use this option to install the SDK on a workstation that already has ROS installed: [One Line SDK Install (binary)](https://bitbucket.org/DataspeedInc/dbw_mkz_ros/src/81e63fcc335d7b64139d7482017d6a97b405e250/ROS_SETUP.md?fileviewer=file-view-default)
 * Download the [Udacity Simulator](https://github.com/udacity/CarND-Capstone/releases).
 
-### Docker Installation
+## Docker Installation
 [Install Docker](https://docs.docker.com/engine/installation/)
 
 Build the docker container
@@ -38,12 +46,12 @@ Run the docker file
 docker run -p 4567:4567 -v $PWD:/capstone -v /tmp/log:/root/.ros/ --rm -it capstone
 ```
 
-### Port Forwarding
+## Port Forwarding
 To set up port forwarding, please refer to the [instructions from term 2](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/16cf4a78-4fc7-49e1-8621-3450ca938b77)
 
-## Usage
+# Usage
 
-### Simulator
+## Simulator
 
 1. Clone the project repository
 ```bash
@@ -64,7 +72,7 @@ roslaunch launch/styx.launch
 ```
 4. Run the simulator
 
-### Real world testing
+## Real world testing
 1. Download [training bag](https://s3-us-west-1.amazonaws.com/udacity-selfdrivingcar/traffic_light_bag_file.zip) that was recorded on the Udacity self-driving car.
 2. Unzip the file
 ```bash
@@ -81,7 +89,7 @@ roslaunch launch/site.launch
 ```
 5. Confirm that traffic light detection works on real life images
 
-## Main Objectives
+# Main Objectives
 
 Given
 * base waypoints,
@@ -94,7 +102,7 @@ Objectives
 * publish brake/throttle/steer commands for the drive by wire module (`ros/src/twist_controller/dbw_node.py` and `ros/src/twist_controller/twist_controller.py`)
 * classify traffic lights given raw image pixels (if a traffic light is in range of the car) and make appropriate adjustments to waypoint velocities (e.g. velocity goes to zero for red light, or increase velocity if the light goes from red to green) (`ros/src/tl_detector/tl_detector.py` and `ros/src/tl_detector/light_classification/tl_classifier.py`)
 
-## Waypoint Publishing
+# Waypoint Publishing
 
 For publishing the waypoints for the car to follow, I find the nearest waypoint to the car from the base waypoints and then take the next `200` base waypoints. If there is a traffic light waypoint index published on the channel `/traffic_waypoint`, I compute the velocities for the waypoints that lead to the traffic light, such that the car stops with a constant coefficient of deceleration. These velocities are written in newly created waypoints that are then published to the `/final_waypoints` channel. Alternatively, one can simply modify the base waypoints, but then the velocity must be set on each step of the algorithm, regardless if there is a traffic light or not. On the one hand using this approach, there are no memory allocations for the new waypoints and also we pay a fixed cost for setting the velocities each time rather than higher cost than usual when there is a traffic light. On the other hand, we modify the base waypoints which are published only once and hence there is only one copy (barring keeping a copy of the whole waypoint array in a backup variable).
 
@@ -140,7 +148,7 @@ Some of the other things that I have tried are
 * when determining whether the nearest waypoint to the car is behind the vehicle and hence we should use the next waypoint, I initially used to check the difference in angles between the orientation of the car and the vector between the car coordinates and the nearest waypoint. In some instances this criterion gave incosistent results (although the car did not seem to have trouble navigating the course in the simulator). I switched to checking the sign of the scalar product of the vectors `v1 = car_pos-nearest_wp_pos` and `v2 = next_wp_pos-nearest_wp_pos`. If the scalar product is positive (meaning that the two vectors point in the same direction), I choose the next waypoint.
 * when calculating the distances for the velocity formula I initially used the provided `distance` method, but since this results in an O(n<sup>2</sup>) calculations on the `final_waypoints`, I wrote the `get_relative_distances` method that computes all waypoint distances to the traffic light only once, resulting in O(n) calculations
 
-## Drive by Wire and control
+# Drive by Wire and control
 
 To control the car I first read the expected linear and angular velocities from the `Twist` command published by the `waypoint_follower` node. These (along with the current car velocity) are then passed on to the controller object implemented in `twist_controller.py`. The current velocity is filtered using the low pass filter from `lowpass.py` with values `tau=0.5,ts=0.2`. The throttle is a real value in `[0,1]`. To control it, I use a PID controller with `P` coefficient `0.5`, `I` and `D` coefficients set to `0` and output values clamped between `0` and `1`. To prevent high values at low speeds (especially when the car is at `0 m/s`), I limit the growth of the throttle to `0.002` between time steps.
 
@@ -152,12 +160,12 @@ I also tried further smoothing of the current velocity with the low pass filter.
 
 Another thing I tried is to also use the `I` and `D` terms of the `PID` controller. However, using only the `P` component, with manual control of throttle growth, actually led to better results with faster convergence to steady state.
 
-## Traffic Light Detection
+# Traffic Light Detection
 
 To detect traffic lights, after receiving an image, I first find the nearest traffic light to the car. If the distance between the car and the traffic light is below 80m, I send the image data to the image classifier.
 I approached the object detection itself in two ways. For the simulator a simpler and more efficient approach is to use pixel counting to determine the color of the traffic light. However, this does not generalize well to the color rich real world data. For a more general solution applicable to both the simulator and real world imagery, I trained a neural network classifier.
 
-### Pixel Counting
+## Pixel Counting
 
 This method relies on the fact that there are not a lot of colors in the simulator. Upon investigation in an image editor, I determined that the following code gives robust detection of the traffic light color
 ```python
@@ -175,11 +183,11 @@ return TrafficLight.UNKNOWN
 ```
 where `image` is a `BGR` encoded image.
 
-### Neural network classification
+## Neural network classification
 
 For the neural network training I used the [Tensorflow Object Detection API](https://github.com/tensorflow/models/tree/master/research/object_detection).
 
-#### Dataset and preparation
+### Dataset and preparation
 
 I trained the network on the [Bosch Small Traffic Lights Dataset](https://hci.iwr.uni-heidelberg.de/node/6132).
 The base object detection models that I use, first resize all images to 300x300 pixels.
@@ -205,7 +213,7 @@ This allowed me to generate 802 additional training images. This is an example o
 
 No training images were collected from the simulator.
 
-#### Training process and results
+### Training process and results
 
 An important consideration in the current use case is that an autonomous vehicle needs real-time detection. Thus, we need fast models. I used two base models from the [Tensorflow detection model zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/detection_model_zoo.md) -- the two SSD models `ssd_mobilenet_v1_coco` and `ssd_mobilenet_v2_coco`. I trained the first model on TensorFlow 1.3 and the second on TensorFlow 1.7. As an output both of them return bounding boxes around detected objects, as well as predicted class and confidence of prediction for each object.
 
