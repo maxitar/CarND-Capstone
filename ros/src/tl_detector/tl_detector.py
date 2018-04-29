@@ -47,8 +47,8 @@ class TLDetector(object):
 
         self.bridge = CvBridge()
         # In simulator use_nn=False is more robust since it determines
-        # traffic light color by using color information
-        self.light_classifier = TLClassifier(use_nn=True)
+        # traffic light color by using the pixel colors directly
+        self.light_classifier = TLClassifier(use_nn=True, tf13=True)
         self.listener = tf.TransformListener()
 
         self.state = TrafficLight.UNKNOWN
